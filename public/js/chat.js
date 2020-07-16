@@ -1,73 +1,112 @@
-const socket = io();
+const socket = io()
 
-//Elements 
-const $messageForm = document.querySelector('form');
+// Elements
+const $messageForm = document.querySelector('#message-form')
+const $messageFormInput = $messageForm.querySelector('input')
 const $messageFormButton = $messageForm.querySelector('button')
-const $messageFormInput = $messageForm.querySelector('input');
-const $LocationButton = document.querySelector('#share-location');
+const $sendLocationButton = document.querySelector('#send-location')
 const $messages = document.querySelector('#messages')
+const $sidebar = document.querySelector('#sidebar')
+
+// Templates
+const messageTemplate = document.querySelector('#message-template').innerHTML
+const locationMessageTemplate = document.querySelector('#location-message-template').innerHTML
+const sidebarTemplate = document.querySelector('#sidebar-template').innerHTML
+
+// Options
+const { username, room } = Qs.parse(location.search, { ignoreQueryPrefix: true })
 
 
-//Templates 
-const messageTemplate = document.querySelector('#message-template').innerHTML;
-const locationURLTemplate = document.querySelector('#locationURL-template').innerHTML;
+const autoscroll = () =>{
+    const $newMessage = $messages.lastElementChild 
 
+    const newMessageStyle = getComputedStyle($newMessage)
+    const newMessageMargin = parseInt(newMessageStyle.marginBottom)
+    const newMessageHeight = $newMessage.offsetHeight + newMessageMargin
 
-//Options
-const {username, room} = Qs.parse(location.search, {igonreQueryPrefix: true})
+    const visibleHeight = $messages.offsetHeight
 
-socket.on('message', (message)=>{
+    const containerHeight = $messages.scrollHeight
+
+    const scrollOffset = $messages.scrollTop + visibleHeight
+
+    if(containerHeight - newMessageHeight <= scrollOffset ){
+        $messages.scrollTop = $messages.scrollHeight
+    }
+}
+
+socket.on('message', (message) => {
     console.log(message)
     const html = Mustache.render(messageTemplate, {
+        username: message.username,
         message: message.text,
         createdAt: moment(message.createdAt).format('h:mm a')
-    });
-    $messages.insertAdjacentHTML('beforeend', html);
-})
-
-
-socket.on('locationURL', (URLmessage)=>{
-    console.log(URLmessage);
-    const html = Mustache.render(locationURLTemplate,{
-        URL: URLmessage.URL,
-        createdAt: moment(URLmessage.createdAt).format('h:mm a')
     })
-    $messages.insertAdjacentHTML('beforeend', html);
+    $messages.insertAdjacentHTML('beforeend', html)
+    autoscroll()
 })
 
-document.querySelector('form').addEventListener('submit',(e) =>{
-    e.preventDefault();
-    $messageFormButton.setAttribute('disabled', 'disabled');
+socket.on('locationMessage', (message) => {
+    console.log(message)
+    const html = Mustache.render(locationMessageTemplate, {
+        username: message.username,
+        url: message.url,
+        createdAt: moment(message.createdAt).format('h:mm a')
+    })
+    $messages.insertAdjacentHTML('beforeend', html)
+    autoscroll()
+})
 
-    socket.emit('sendMessage', e.target.elements.message.value, (error)=>{
-        $messageFormButton.removeAttribute('disabled');
-        $messageFormInput.value = '';
-        $messageFormInput.focus();
+$messageForm.addEventListener('submit', (e) => {
+    e.preventDefault()
 
-        if(error){
+    $messageFormButton.setAttribute('disabled', 'disabled')
+
+    const message = e.target.elements.message.value
+
+    socket.emit('sendMessage', message, (error) => {
+        $messageFormButton.removeAttribute('disabled')
+        $messageFormInput.value = ''
+        $messageFormInput.focus()
+
+        if (error) {
             return console.log(error)
         }
-        console.log('message was delivered!')
-    });
+
+        console.log('Message delivered!')
+    })
 })
 
-$LocationButton.addEventListener('click', () =>{
-    if(!navigator.geolocation){
-        alert('Geolocation is not supported by your browser!');
+$sendLocationButton.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+        return alert('Geolocation is not supported by your browser.')
     }
 
-    $LocationButton.setAttribute('disabled', 'disabled');
-    navigator.geolocation.getCurrentPosition(position =>{
-        
+    $sendLocationButton.setAttribute('disabled', 'disabled')
 
+    navigator.geolocation.getCurrentPosition((position) => {
         socket.emit('sendLocation', {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude
-        }, ()=>{
-            console.log('location is sent!')
-            $LocationButton.removeAttribute('disabled');
-        });
+        }, () => {
+            $sendLocationButton.removeAttribute('disabled')
+            console.log('Location shared!')  
+        })
     })
 })
 
-socket.emit('join', {username, room});
+socket.emit('join', { username, room }, (error) => {
+    if (error) {
+        alert(error)
+        location.href = '/'
+    }
+})
+
+socket.on('roomData', ({room, users})=>{
+    const html = Mustache.render(sidebarTemplate, {
+        room, 
+        users
+    })
+
+    $sidebar.innerHTML = html
+} )
